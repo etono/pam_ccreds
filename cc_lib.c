@@ -20,9 +20,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 #include <openssl/sha.h>
-#else
+#elif defined(USE_LIBGCRYPT)
 #include <gcrypt.h>
 #endif
 
@@ -35,9 +35,9 @@ static int _pam_cc_derive_key_ssha1(pam_cc_handle_t *pamcch,
 				    char **derived_key_p,
 				    size_t *derived_key_length_p)
 {
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 	SHA_CTX sha_ctx;
-#else
+#elif defined(USE_LIBGCRYPT)
 	if (!gcry_control (GCRYCTL_ANY_INITIALIZATION_P)) {
 		if (!gcry_check_version (NULL)) {
 			syslog (LOG_ERR,
@@ -58,11 +58,11 @@ static int _pam_cc_derive_key_ssha1(pam_cc_handle_t *pamcch,
 	T[2] = (type >> 8)  & 0xFF;
 	T[3] = (type >> 0)  & 0xFF;
 
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 	SHA1_Init(&sha_ctx);
 	*derived_key_length_p = SHA_DIGEST_LENGTH;
 	*derived_key_p = malloc(SHA_DIGEST_LENGTH);
-#else
+#elif defined(USE_LIBGCRYPT)
 	gcry_md_open(&handle, GCRY_MD_SHA1, 0);
 	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA1);
 	*derived_key_p = (char *)malloc(*derived_key_length_p);
@@ -74,25 +74,25 @@ static int _pam_cc_derive_key_ssha1(pam_cc_handle_t *pamcch,
 	/*
 	 * Salt with key type, service and user names
 	 */
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 	SHA1_Update(&sha_ctx, T, sizeof(T));
-#else
+#elif defined(USE_LIBGCRYPT)
 	gcry_md_write(handle, T, sizeof(T));
 #endif
 
 	if (pamcch->service != NULL) {
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 		SHA1_Update(&sha_ctx, pamcch->service, strlen(pamcch->service));
-#else
+#elif defined(USE_LIBGCRYPT)
 		gcry_md_write(handle, pamcch->service, strlen(pamcch->service));
 #endif
 	}
 
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 	SHA1_Update(&sha_ctx, pamcch->user, strlen(pamcch->user));
 	SHA1_Update(&sha_ctx, credentials, length);
 	SHA1_Final((unsigned char *)*derived_key_p, &sha_ctx);
-#else
+#elif defined(USE_LIBGCRYPT)
 	gcry_md_write(handle, pamcch->user, strlen(pamcch->user));
 	gcry_md_write(handle, credentials, length);
 	memcpy(*derived_key_p, gcry_md_read(handle, 0), *derived_key_length_p);
