@@ -1,4 +1,8 @@
-noinst_PROGRAMS = pam_ccreds.so cc_test cc_dump
+if BUILD_TEST
+TEST = cc_test
+endif
+
+noinst_PROGRAMS = pam_ccreds.so $(TEST) cc_dump
 sbin_PROGRAMS = ccreds_chkpwd
 EXTRA_DIST = COPYING.LIB CVSVersionInfo.txt ChangeLog README \
 	     ldap.conf pam.conf pam_ccreds.spec

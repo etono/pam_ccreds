@@ -15,41 +15,108 @@
 #include <unistd.h>
 #include <errno.h>
 #include <limits.h>
+#include <getopt.h>
 
 #include "cc.h"
 
 static int usage(void)
 {
-	fprintf(stderr, "Usage: cc_test [-validate|-store|-update] [service] [user] [password] [ccredsfile]\n");
-	fprintf(stderr, "       where service may be \"any\"\n");
-	fprintf(stderr, "       where password may be \"-\" to delete a user\n");
+	fprintf(stderr, "Usage: cc_test [--validate|--store|--update] [options]\n\n");
+	fprintf(stderr, "Actions:\n");
+	fprintf(stderr, "  --update                 update user credentials\n");	
+	fprintf(stderr, "  --store                  store user password in the case\n");	
+	fprintf(stderr, "  --validate               validate against cached credentials\n\n");		
+	fprintf(stderr, "General options:\n");	
+	fprintf(stderr, "  -c, --credsfile filename specify the file where the credentails are cached\n");	
+	fprintf(stderr, "  -w, --password password  specify the user password\n");	
+	fprintf(stderr, "  -s, --service name       specify the name of the service\n");	
+	fprintf(stderr, "  -u, --user name          specify the name of the user\n\n");	
 
 	return PAM_SYSTEM_ERR;
 }
+
+typedef enum { 
+	ACTION_VALIDATE, 
+	ACTION_STORE, 
+	ACTION_UPDATE, 
+	ACTION_NONE 
+} pam_cc_action_t;
 
 int main(int argc, char *argv[])
 {
 	pam_cc_handle_t *pamcch;
 	int rc;
-	char *user;
-	char *service;
-	char *password;
-	char *ccredsfile;
-	char *action;
-	const char *function = NULL;
+	char *user = NULL;
+	char *service = NULL;
+	char *password = NULL;
+	char *ccredsfile = NULL;
+	char *function = NULL;
+	int action = ACTION_NONE;
 	unsigned int cc_flags;
 
-	if (argc < 5 || argc > 6) {
-		exit(usage());
+#if defined(CCREDS_FILE)
+	ccredsfile = CCREDS_FILE;
+#endif
+
+	struct option options[] = {
+		{"help",      no_argument,        0, 'l'},
+		{"validate",  no_argument,        &action, ACTION_VALIDATE},
+		{"store",     no_argument,        &action, ACTION_STORE},
+		{"update",    no_argument,        &action, ACTION_UPDATE},
+		{"password",  required_argument,  0, 'w'},
+		{"service",   required_argument,  0, 's'},
+		{"user",      required_argument,  0, 'u'},
+		{"credsfile", required_argument,  0, 'c'},
+		{0, 0, 0, 0}
+	};
+
+	while(1) {	
+		int c, index;
+		c = getopt_long(argc, argv, "w:u:s:c:", options, &index);
+
+		if (c == -1) {
+			break;
+		}
+
+		switch(c) {
+		case 0:
+			break;
+		case 'l':
+			usage();
+			return 0;
+		case 'w':
+			password = optarg;
+			break;
+		case 's':
+			service = optarg;
+			break;
+		case 'u':
+			user = optarg;
+			break;
+		case 'c':
+			ccredsfile = optarg;
+			break;
+		case '?':
+			usage();
+			return 1;
+		default:
+			return 1;
+		}
+ 	}
+
+	if (action == ACTION_NONE) {
+		fprintf(stderr, "No action specified. Please specify one of --store, --validate or --update\n\n");
+		usage();
+		return 1;
 	}
 
-	action = argv[1];
-	service = (strcasecmp(argv[2], "any") == 0) ? NULL : argv[2];
-	user = argv[3];
-	password = (strcasecmp(argv[4], "-") == 0) ? NULL : argv[4];
-	ccredsfile = (argc > 5) ? argv[5] : NULL;
+	if (user == NULL) {
+		fprintf(stderr, "No user specified.\n\n");
+		usage();
+		return 1;	  
+	}
 
-	if (strcmp(action, "-validate") == 0)
+	if (action == ACTION_VALIDATE)
 		cc_flags = CC_FLAGS_READ_ONLY;
 	else
 		cc_flags = 0;
@@ -60,15 +127,15 @@ int main(int argc, char *argv[])
 		exit(rc);
 	}
 
-	if (strcmp(action, "-validate") == 0 && password) {
+	if (action == ACTION_VALIDATE && password) {
 		rc = pam_cc_validate_credentials(pamcch, PAM_CC_TYPE_DEFAULT,
 						 password, strlen(password));
 		function = "pam_cc_validate_credentials";
-	} else if (strcmp(action, "-store") == 0 && password) {
+	} else if (action == ACTION_STORE && password) {
 		rc = pam_cc_store_credentials(pamcch, PAM_CC_TYPE_DEFAULT,
 					      password, strlen(password));
 		function = "pam_cc_store_credentials";
-	} else if (strcmp(action, "-update") == 0) {
+	} else if (action == ACTION_UPDATE) {
 		rc = pam_cc_delete_credentials(pamcch, PAM_CC_TYPE_DEFAULT,
 					       password,
 					       (password == NULL) ? 0 : strlen(password));
