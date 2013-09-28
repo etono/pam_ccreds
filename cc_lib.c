@@ -32,6 +32,25 @@
 
 #include "cc_private.h"
 
+#if defined(USE_LIBGCRYPT)
+/* If libgcrypt isn't initalized try to do it here.
+   Calls to the library will drop priviledges if it isn't initialized with
+   GCRYCTL_DISABLE_SECMEM. */
+static void _pam_cc_initialize_libgcrypt_if_needed()
+{
+	if (!gcry_control (GCRYCTL_INITIALIZATION_FINISHED_P)) {
+		syslog(LOG_INFO, "pam_ccreds: initializing libgcrypt");
+		if (!gcry_check_version(GCRYPT_VERSION)) {
+			syslog(LOG_ERR, "pam_ccreds: incorrect libgcrypt version: expected '%s'",
+				GCRYPT_VERSION);
+			return;
+		}     
+		gcry_control(GCRYCTL_DISABLE_SECMEM, 0);
+		gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
+	}
+}
+#endif
+
 static char * _pam_cc_get_salt(pam_cc_handle_t *pamcch, pam_cc_type_t type, size_t * salt_length_p)
 {
 	size_t user_offset = (pamcch->service ? strlen(pamcch->service) : 0) + 4;
@@ -82,6 +101,7 @@ static int _pam_cc_derive_key_pbkdf2_sha1(pam_cc_handle_t *pamcch,
 	     rv = PAM_SYSTEM_ERR;
 	}
 #elif defined(USE_LIBGCRYPT)
+	_pam_cc_initialize_libgcrypt_if_needed();
 	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA1);
 	*derived_key_p = (char *)malloc(*derived_key_length_p);
 
@@ -133,6 +153,7 @@ static int _pam_cc_derive_key_pbkdf2_sha256(pam_cc_handle_t *pamcch,
 	      rv = PAM_SYSTEM_ERR;
 	}
 #elif defined(USE_LIBGCRYPT)
+	_pam_cc_initialize_libgcrypt_if_needed();
 	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA256);
 	*derived_key_p = (char *)malloc(*derived_key_length_p);
 
@@ -185,6 +206,7 @@ static int _pam_cc_derive_key_pbkdf2_sha512(pam_cc_handle_t *pamcch,
 	      rv = PAM_SYSTEM_ERR;
 	}
 #elif defined(USE_LIBGCRYPT)
+	_pam_cc_initialize_libgcrypt_if_needed();
 	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA512);
 	*derived_key_p = (char *)malloc(*derived_key_length_p);
 
