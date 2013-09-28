@@ -25,6 +25,9 @@
 #include <openssl/evp.h>
 #elif defined(USE_LIBGCRYPT)
 #include <gcrypt.h>
+#elif defined(USE_NETTLE)
+#include <nettle/pbkdf2.h>
+#include <nettle/hmac.h>
 #endif
 
 #include "cc_private.h"
@@ -87,6 +90,13 @@ static int _pam_cc_derive_key_pbkdf2_sha1(pam_cc_handle_t *pamcch,
 			    *derived_key_length_p, *derived_key_p)) {
 		rv = PAM_SYSTEM_ERR;
 	}
+#elif defined(USE_NETTLE)
+        *derived_key_length_p = SHA1_DIGEST_SIZE;
+        *derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	nettle_pbkdf2_hmac_sha1(length, (uint8_t*)credentials, iterations,
+				salt_length, (uint8_t*)salt, 
+				*derived_key_length_p, (uint8_t*)*derived_key_p);
 #endif
 	free(salt);
 
@@ -131,6 +141,13 @@ static int _pam_cc_derive_key_pbkdf2_sha256(pam_cc_handle_t *pamcch,
 			    *derived_key_length_p, *derived_key_p)) {
 		rv = PAM_SYSTEM_ERR;
 	}
+#elif defined(USE_NETTLE)
+        *derived_key_length_p = SHA256_DIGEST_SIZE;
+        *derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	nettle_pbkdf2_hmac_sha256(length, (uint8_t*)credentials, iterations,
+				  salt_length, (uint8_t*)salt, 
+				  *derived_key_length_p, (uint8_t*)*derived_key_p);
 #endif
 
 	free(salt);
@@ -176,6 +193,15 @@ static int _pam_cc_derive_key_pbkdf2_sha512(pam_cc_handle_t *pamcch,
 			    *derived_key_length_p, *derived_key_p)) {
 		rv = PAM_SYSTEM_ERR;
 	}
+#elif defined(USE_NETTLE)
+        *derived_key_length_p = SHA512_DIGEST_SIZE;
+        *derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	struct hmac_sha512_ctx ctx;
+	nettle_hmac_sha512_set_key(&ctx, length, (uint8_t*)credentials);
+	PBKDF2(&ctx, nettle_hmac_sha512_update, nettle_hmac_sha512_digest,
+	       SHA512_DIGEST_SIZE, iterations, salt_length, (uint8_t*)salt,
+	       *derived_key_length_p, (uint8_t*)*derived_key_p);
 #endif
 	free(salt);
 

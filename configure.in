@@ -23,10 +23,11 @@ AC_DEFINE_UNQUOTED(CCREDS_VALIDATE, "/sbin/ccreds_chkpwd", [Verify password with
 AC_ARG_WITH(ccreds-file, [  --with-ccreds-file=PATH path to cached credentials file], [AC_DEFINE_UNQUOTED(CCREDS_FILE, "$with_ccreds_file")])
 
 AC_ARG_WITH(crypto-backend,
-[AS_HELP_STRING([--with-crypto-backend=LIB],[specify which cryptographic back-end to use, supported backends: openssl and libgcrypt @<:@default=openssl@:>@])],
+[AS_HELP_STRING([--with-crypto-backend=LIB],[specify which cryptographic back-end to use, supported backends: openssl, libgcrypt and nettle @<:@default=openssl@:>@])],
 [case "${withval}" in
   openssl*) crypto_backend=openssl ;;
   libgcrypt*) crypto_backend=libgcrypt ;;
+  nettle*) crypto_backend=nettle ;;
   *) AC_MSG_ERROR(bad value ${withval} for --with-crypto-backend) ;;
 esac],[crypto_backend=openssl])
 
@@ -98,7 +99,21 @@ AS_CASE([$crypto_backend],
 	   AC_CHECK_FUNCS([gcry_kdf_derive],,[AC_MSG_ERROR(could not find gcry_kdf_derive. we require libgcrypt >= 1.5.0)])
 	   CC_CHECK_LIBGCRYPT_HASH([sha1], $LIBGCRYPT_CONFIG, have_sha1=1) 
 	   CC_CHECK_LIBGCRYPT_HASH([sha256], $LIBGCRYPT_CONFIG, have_sha256=1) 
-	   CC_CHECK_LIBGCRYPT_HASH([sha512], $LIBGCRYPT_CONFIG, have_sha512=1)
+	   CC_CHECK_LIBGCRYPT_HASH([sha512], $LIBGCRYPT_CONFIG, have_sha512=1)],
+	[nettle*],
+	 [ AC_DEFINE([USE_NETTLE], [1], [Define to 1 if you want to use nettle])
+	   PKG_CHECK_MODULES([NETTLE], [nettle], [], [])
+
+	   LIBS="$NETTLE_LIBS $LIBS" 
+	   CPPFLAGS="$NETTLE_CFLAGS $CPPFLAGS" 
+
+	   AC_CHECK_HEADERS([nettle/pbkdf2.h], , AC_MSG_ERROR(could not locate <nettle/pbkdf2.h>. we require nettle >= 2.6))
+	   AC_CHECK_HEADERS([nettle/hmac.h], , AC_MSG_ERROR(could not locate <nettle/hmac.h>))
+	   AC_CHECK_FUNC([nettle_pbkdf2_hmac_sha1],have_sha1=1)
+	   AC_CHECK_FUNC([nettle_pbkdf2_hmac_sha256], have_sha256=1)
+	   AC_CHECK_FUNC([nettle_pbkdf2],
+			 AC_CHECK_FUNC([nettle_hmac_sha512_update],
+				AC_CHECK_FUNC([nettle_hmac_sha512_digest], have_sha512=1)))
 	 ])
 
 if [ test "x$have_sha1" = "x0" ] && [ test "x$have_sha256" = "x0" ] && [ test "x$have_sha512" = "x0" ]; then
