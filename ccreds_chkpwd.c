@@ -94,8 +94,7 @@ static int _ccreds_verify_password(const char *service, const char *name,
 		goto _return;
 	}
 
-	rc = pam_cc_validate_credentials(pamcch, PAM_CC_TYPE_DEFAULT, p,
-	                                 strlen(p));
+	rc = pam_cc_validate_credentials(pamcch, p, strlen(p));
 	if (rc != PAM_SUCCESS) {
 		_log_err(LOG_DEBUG, "error reading cached credentials");
 		retval = CCREDS_FAILED;

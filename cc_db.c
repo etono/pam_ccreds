@@ -161,7 +161,7 @@ int pam_cc_db_put(void *_db, const char *keyname, size_t keylength,
 
 /* Read from underlying datastore */
 int pam_cc_db_get(void *_db, const char *keyname, size_t keylength,
-		  char *data, size_t *size)
+		  char **data, size_t *size)
 {
 	DB *db = (DB *)_db;
 	DBT key;
@@ -199,11 +199,13 @@ int pam_cc_db_get(void *_db, const char *keyname, size_t keylength,
 		return (rc == DB_NOTFOUND) ? PAM_AUTHINFO_UNAVAIL : PAM_SERVICE_ERR;
 	}
 
-	if (val.size > *size) {
+	*data = (char*)malloc(val.size);
+
+	if (*data == NULL) {
 		return PAM_BUF_ERR;
 	}
 
-	memcpy(data, val.data, val.size);
+	memcpy(*data, val.data, val.size);
 	*size = val.size;
 
 	return PAM_SUCCESS;

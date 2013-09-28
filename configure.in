@@ -69,6 +69,8 @@ AM_CONDITIONAL(EXTENSION_1, test "$TARGET_OS" = "HPUX")
 AM_CONDITIONAL(BUILD_TEST, test "x$build_test" = "xtrue")
 
 have_sha1=0
+have_sha256=0
+have_sha512=0
 
 AS_CASE([$crypto_backend],
 	[openssl*],
@@ -79,7 +81,9 @@ AS_CASE([$crypto_backend],
 	   CPPFLAGS="$OPENSSL_CFLAGS $CPPFLAGS" 
 
 	   AC_CHECK_HEADERS(openssl/opensslconf.h, , AC_MSG_ERROR(could not locate <openssl/opensslconf.h>))
-	   AC_CHECK_FUNC([SHA1_Update], have_sha1=1)],
+  	   AC_CHECK_FUNC([PKCS5_PBKDF2_HMAC_SHA1], have_sha1=1)
+	   AC_CHECK_FUNC([PKCS5_PBKDF2_HMAC], [AC_CHECK_FUNC([EVP_sha256], have_sha256=1)
+	   				       AC_CHECK_FUNC([EVP_sha512], have_sha512=1)])],
 	[libgcrypt*],
 	 [ AC_DEFINE([USE_LIBGCRYPT], [1], [Define to 1 if you want to use libgcrypt])	
 	   AC_PATH_PROG(LIBGCRYPT_CONFIG, libgcrypt-config) 
@@ -91,10 +95,13 @@ AS_CASE([$crypto_backend],
 	   CPPFLAGS="$LIBGCRYPT_CFLAGS $CPPFLAGS" 
 
 	   AC_CHECK_HEADERS([gcrypt.h], , AC_MSG_ERROR(could not locate <gcrypt.h>))
-	   CC_CHECK_LIBGCRYPT_HASH([sha1], $LIBGCRYPT_CONFIG, have_sha1=1)
+	   AC_CHECK_FUNCS([gcry_kdf_derive],,[AC_MSG_ERROR(could not find gcry_kdf_derive. we require libgcrypt >= 1.5.0)])
+	   CC_CHECK_LIBGCRYPT_HASH([sha1], $LIBGCRYPT_CONFIG, have_sha1=1) 
+	   CC_CHECK_LIBGCRYPT_HASH([sha256], $LIBGCRYPT_CONFIG, have_sha256=1) 
+	   CC_CHECK_LIBGCRYPT_HASH([sha512], $LIBGCRYPT_CONFIG, have_sha512=1)
 	 ])
 
-if [ test "x$have_sha1" = "x0" ]; then
+if [ test "x$have_sha1" = "x0" ] && [ test "x$have_sha256" = "x0" ] && [ test "x$have_sha512" = "x0" ]; then
    AC_MSG_ERROR([no hash algorithms supported])
 fi
 
@@ -103,6 +110,8 @@ AS_IF([test "x$build_test" = "xtrue"],
 	     AC_CHECK_FUNC([getopt_long], , AC_MSG_ERROR(could not locate getopt_long)) ])
 
 AC_DEFINE_UNQUOTED([HAVE_SHA1], $have_sha1, [ Define to 1 if you have SHA1 support in the crypto backend ])
+AC_DEFINE_UNQUOTED([HAVE_SHA256], $have_sha256, [ Define to 1 if you have SHA2-256 support in the crypto backend ])
+AC_DEFINE_UNQUOTED([HAVE_SHA512], $have_sha512, [ Define to 1 if you have SHA2-512 support in the crypto backend ])
 
 AC_CHECK_HEADERS(security/pam_appl.h security/pam_misc.h security/pam_modules.h)
 AC_CHECK_HEADERS(pam/pam_appl.h pam/pam_misc.h pam/pam_modules.h)

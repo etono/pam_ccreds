@@ -205,8 +205,7 @@ static int _pam_sm_validate_cached_credentials(pam_handle_t *pamh,
 
 	if (rc == PAM_SUCCESS) {
 		if (isRoot)
-			rc = pam_cc_validate_credentials(pamcch, PAM_CC_TYPE_DEFAULT,
-							 authtok, strlen(authtok));
+			rc = pam_cc_validate_credentials(pamcch, authtok, strlen(authtok));
 		else
 			rc = pam_cc_run_helper_binary(pamh, CCREDS_VALIDATE, authtok,
 						      ((sm_flags & SM_FLAGS_SERVICE_SPECIFIC) != 0));
@@ -224,6 +223,7 @@ static int _pam_sm_validate_cached_credentials(pam_handle_t *pamh,
 }
 
 static int _pam_sm_store_cached_credentials(pam_handle_t *pamh,
+					    pam_cc_type_t type, unsigned int iterations,
 					    int flags, unsigned int sm_flags,
 					    const char *ccredsfile)
 {
@@ -252,7 +252,7 @@ static int _pam_sm_store_cached_credentials(pam_handle_t *pamh,
 		authtok = "";
 
 	if (isRoot) 
-		rc = pam_cc_store_credentials(pamcch, PAM_CC_TYPE_DEFAULT,
+	  rc = pam_cc_store_credentials(pamcch, type, iterations,
 					      authtok, strlen(authtok));
 	else
 		/* Unable to perform when not root; just return success. */
@@ -293,8 +293,7 @@ static int _pam_sm_update_cached_credentials(pam_handle_t *pamh,
 			authtok = "";
 
 		if (isRoot)
-			rc = pam_cc_delete_credentials(pamcch, PAM_CC_TYPE_DEFAULT,
-						       authtok, strlen(authtok));
+			rc = pam_cc_delete_credentials(pamcch, authtok, strlen(authtok));
 		else
 			/* Unable to perform when not root; just return success. */
 			rc = PAM_SUCCESS;
@@ -324,11 +323,13 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 {
 	int i;
 	int rc;
+	unsigned int iterations = 10000;
 	unsigned int sm_flags = 0, sm_action = 0;
 	const char *ccredsfile = NULL;
 	const char *action = NULL;
 	const char *name = NULL;
-	int (*selector)(pam_handle_t *, int, unsigned int, const char *);
+	const char *rounds = NULL;
+	pam_cc_type_t type = PAM_CC_TYPE_DEFAULT; 
 	uid_t minimum_uid = 0;
 
 	for (i = 0; i < argc; i++) {
@@ -344,6 +345,14 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 			ccredsfile = argv[i] + sizeof("ccredsfile=") - 1;
 		else if (strncmp(argv[i], "action=", sizeof("action=") - 1) == 0)
 			action = argv[i] + sizeof("action=") - 1;
+		else if (strncmp(argv[i], "sha1", sizeof("sha1") - 1) == 0) 
+			type = PAM_CC_TYPE_PBKDF2_SHA1;
+		else if (strncmp(argv[i], "sha256", sizeof("sha256") - 1) == 0)
+			type = PAM_CC_TYPE_PBKDF2_SHA256;
+		else if (strncmp(argv[i], "sha512", sizeof("sha512") - 1) == 0)
+			type = PAM_CC_TYPE_PBKDF2_SHA512;
+		else if (strncmp(argv[i], "rounds=", sizeof("rounds=") - 1) == 0)
+			rounds = argv[i] + sizeof("rounds=") - 1;
 		else
 			syslog(LOG_ERR, "pam_ccreds: illegal option %s", argv[i]);
 	}
@@ -352,6 +361,16 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 	    == (SM_FLAGS_USE_FIRST_PASS | SM_FLAGS_TRY_FIRST_PASS)) {
 		syslog(LOG_ERR, "pam_ccreds: both use_first_pass and try_first_pass given");
 		return PAM_SERVICE_ERR;
+	}
+
+	if (rounds != NULL) {
+		char * error = NULL;
+		iterations = strtoul(rounds, &error, 0);
+		
+		if (error == rounds || rounds == 0) {
+			syslog(LOG_ERR, "pam_ccreds: invalid rounds value \"%s\"", rounds);
+			iterations = 10000;
+		}
 	}
 
 	if (action == NULL) {
@@ -373,20 +392,19 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 
 	switch (sm_action) {
 	case SM_ACTION_VALIDATE_CCREDS:
-		selector = _pam_sm_validate_cached_credentials;
+		rc = _pam_sm_validate_cached_credentials(pamh, flags, sm_flags, ccredsfile);
 		break;
 	case SM_ACTION_STORE_CCREDS:
-		selector = _pam_sm_store_cached_credentials;
+		rc = _pam_sm_store_cached_credentials(pamh, type, iterations, flags, 
+						      sm_flags, ccredsfile);
 		break;
 	case SM_ACTION_UPDATE_CCREDS:
-		selector = _pam_sm_update_cached_credentials;
+		rc = _pam_sm_update_cached_credentials(pamh, flags, sm_flags, ccredsfile);
 		break;
 	default:
 		syslog(LOG_ERR, "pam_ccreds: invalid action %d", sm_action);
 		return PAM_SERVICE_ERR;
 	}
-
-	rc = (*selector)(pamh, flags, sm_flags, ccredsfile);
 
 	return rc;
 }
