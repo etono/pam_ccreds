@@ -346,11 +346,11 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 			ccredsfile = argv[i] + sizeof("ccredsfile=") - 1;
 		else if (strncmp(argv[i], "action=", sizeof("action=") - 1) == 0)
 			action = argv[i] + sizeof("action=") - 1;
-		else if (strncmp(argv[i], "sha1", sizeof("sha1") - 1) == 0) 
+		else if (strcmp(argv[i], "sha1") == 0)
 			type = PAM_CC_TYPE_PBKDF2_SHA1;
-		else if (strncmp(argv[i], "sha256", sizeof("sha256") - 1) == 0)
+		else if (strcmp(argv[i], "sha256") == 0)
 			type = PAM_CC_TYPE_PBKDF2_SHA256;
-		else if (strncmp(argv[i], "sha512", sizeof("sha512") - 1) == 0)
+		else if (strcmp(argv[i], "sha512") == 0)
 			type = PAM_CC_TYPE_PBKDF2_SHA512;
 		else if (strncmp(argv[i], "rounds=", sizeof("rounds=") - 1) == 0)
 			rounds = argv[i] + sizeof("rounds=") - 1;
