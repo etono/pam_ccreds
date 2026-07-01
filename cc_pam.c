@@ -167,6 +167,7 @@ static int _pam_sm_validate_cached_credentials(pam_handle_t *pamh,
 	const char *authtok;
 	pam_cc_handle_t *pamcch = NULL;
 	int isRoot = (geteuid() == 0);
+	int haspw;
 
 	if (isRoot) {
 		rc = pam_cc_start_ext(pamh, ((sm_flags & SM_FLAGS_SERVICE_SPECIFIC) != 0),
@@ -182,11 +183,11 @@ static int _pam_sm_validate_cached_credentials(pam_handle_t *pamh,
 	case SM_FLAGS_USE_FIRST_PASS:
 	case SM_FLAGS_TRY_FIRST_PASS:
 		rc = pam_get_item(pamh, PAM_AUTHTOK, (const void **)&authtok);
-		if (rc == PAM_SUCCESS) {
-			if (authtok == NULL)
-				authtok = "";
+		haspw = rc == PAM_SUCCESS && authtok != NULL;
+		if (authtok == NULL) {
+			authtok = "";
 		}
-		if ((sm_flags & SM_FLAGS_USE_FIRST_PASS) || (rc == PAM_SUCCESS))
+		if ((sm_flags & SM_FLAGS_USE_FIRST_PASS) || haspw)
 			break;
 	case 0:
 		rc = _pam_sm_interact(pamh, flags, &authtok);
