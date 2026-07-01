@@ -131,7 +131,8 @@ AC_DEFINE_UNQUOTED([HAVE_SHA512], $have_sha512, [ Define to 1 if you have SHA2-5
 AC_CHECK_HEADERS(security/pam_appl.h security/pam_misc.h security/pam_modules.h)
 AC_CHECK_HEADERS(pam/pam_appl.h pam/pam_misc.h pam/pam_modules.h)
 
-AC_CHECK_HEADERS(db.h)
+AC_CHECK_HEADERS(db.h,, AC_MSG_ERROR(could not locate <db.h>. we require berkeley db))
+
 
 AC_CHECK_LIB(db, main,[LIBS="-ldb $LIBS" found_db_lib=yes],,$LIBS)
 if test -z "$found_db_lib"; then
