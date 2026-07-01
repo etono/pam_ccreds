@@ -167,6 +167,7 @@ static int _pam_sm_validate_cached_credentials(pam_handle_t *pamh,
 	const char *authtok;
 	pam_cc_handle_t *pamcch = NULL;
 	int isRoot = (geteuid() == 0);
+	int haspw;
 
 	if (isRoot) {
 		rc = pam_cc_start_ext(pamh, ((sm_flags & SM_FLAGS_SERVICE_SPECIFIC) != 0),
@@ -182,11 +183,11 @@ static int _pam_sm_validate_cached_credentials(pam_handle_t *pamh,
 	case SM_FLAGS_USE_FIRST_PASS:
 	case SM_FLAGS_TRY_FIRST_PASS:
 		rc = pam_get_item(pamh, PAM_AUTHTOK, (const void **)&authtok);
-		if (rc == PAM_SUCCESS) {
-			if (authtok == NULL)
-				authtok = "";
+		haspw = rc == PAM_SUCCESS && authtok != NULL;
+		if (authtok == NULL) {
+			authtok = "";
 		}
-		if ((sm_flags & SM_FLAGS_USE_FIRST_PASS) || (rc == PAM_SUCCESS))
+		if ((sm_flags & SM_FLAGS_USE_FIRST_PASS) || haspw)
 			break;
 	case 0:
 		rc = _pam_sm_interact(pamh, flags, &authtok);
@@ -345,11 +346,11 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 			ccredsfile = argv[i] + sizeof("ccredsfile=") - 1;
 		else if (strncmp(argv[i], "action=", sizeof("action=") - 1) == 0)
 			action = argv[i] + sizeof("action=") - 1;
-		else if (strncmp(argv[i], "sha1", sizeof("sha1") - 1) == 0) 
+		else if (strcmp(argv[i], "sha1") == 0)
 			type = PAM_CC_TYPE_PBKDF2_SHA1;
-		else if (strncmp(argv[i], "sha256", sizeof("sha256") - 1) == 0)
+		else if (strcmp(argv[i], "sha256") == 0)
 			type = PAM_CC_TYPE_PBKDF2_SHA256;
-		else if (strncmp(argv[i], "sha512", sizeof("sha512") - 1) == 0)
+		else if (strcmp(argv[i], "sha512") == 0)
 			type = PAM_CC_TYPE_PBKDF2_SHA512;
 		else if (strncmp(argv[i], "rounds=", sizeof("rounds=") - 1) == 0)
 			rounds = argv[i] + sizeof("rounds=") - 1;
@@ -365,9 +366,9 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 
 	if (rounds != NULL) {
 		char * error = NULL;
-		iterations = strtoul(rounds, &error, 0);
+		iterations = strtoul(rounds, &error, 10);
 		
-		if (error == rounds || rounds == 0) {
+		if (error == rounds || iterations == 0) {
 			syslog(LOG_ERR, "pam_ccreds: invalid rounds value \"%s\"", rounds);
 			iterations = 10000;
 		}

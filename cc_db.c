@@ -351,12 +351,20 @@ int pam_cc_db_seq(void *_db, void **cookie,
 
 	switch (rc) {
 	case DB_NOTFOUND:
+#if DB_VERSION_MAJOR >= 2
+		cursor->c_close(cursor);
+		*cookie = NULL;
+#endif
 		rc = PAM_SUCCESS;
 		break;
 	case 0:
 		rc = PAM_INCOMPLETE;
 		break;
 	default:
+#if DB_VERSION_MAJOR >= 2
+		cursor->c_close(cursor);
+		*cookie = NULL;
+#endif
 		errno = rc;
 		rc = PAM_SERVICE_ERR;
 		return rc;
