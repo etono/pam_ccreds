@@ -1,9 +1,9 @@
-AC_INIT(cc_lib.c)
-AC_CANONICAL_SYSTEM
+AC_INIT([pam_ccreds],[10])
+AC_CANONICAL_TARGET
 AC_PREFIX_DEFAULT()
 
-AM_INIT_AUTOMAKE(pam_ccreds, 10)
-AM_CONFIG_HEADER(config.h)
+AM_INIT_AUTOMAKE
+AC_CONFIG_HEADERS([config.h])
 AM_MAINTAINER_MODE
 
 AC_PROG_GREP
@@ -31,14 +31,14 @@ AC_ARG_WITH(crypto-backend,
   *) AC_MSG_ERROR(bad value ${withval} for --with-crypto-backend) ;;
 esac],[crypto_backend=openssl])
 
-AC_ARG_ENABLE([test], [ AS_HELP_STRING([--enable-test],[build a program which can be used to test the module's functionality @<:@default=yes@:>@])],
+AC_ARG_ENABLE([test], [AS_HELP_STRING([--enable-test],[build a program which can be used to test the module's functionality @<:@default=yes@:>@])],
 [case "${enableval}" in
   yes) build_test=true ;;
   no)  build_test=false ;;
   *) AC_MSG_ERROR([bad value ${enableval} for --enable-test]) ;;
 esac], [build_test=true])
 
-if test "$ac_cv_prog_gcc" = "yes"; then CFLAGS="$CFLAGS -Wall -fPIC"; fi
+if test "$ac_cv_c_compiler_gnu" = "yes"; then CFLAGS="$CFLAGS -Wall -fPIC"; fi
 
 case "$target_os" in
 freebsd*) CPPFLAGS="$CPPFLAGS -DPIC -D_REENTRANT" ;;
@@ -131,7 +131,8 @@ AC_DEFINE_UNQUOTED([HAVE_SHA512], $have_sha512, [ Define to 1 if you have SHA2-5
 AC_CHECK_HEADERS(security/pam_appl.h security/pam_misc.h security/pam_modules.h)
 AC_CHECK_HEADERS(pam/pam_appl.h pam/pam_misc.h pam/pam_modules.h)
 
-AC_CHECK_HEADERS(db.h)
+AC_CHECK_HEADERS(db.h,, AC_MSG_ERROR(could not locate <db.h>. we require berkeley db))
+
 
 AC_CHECK_LIB(db, main,[LIBS="-ldb $LIBS" found_db_lib=yes],,$LIBS)
 if test -z "$found_db_lib"; then
@@ -141,5 +142,6 @@ fi
 AC_CHECK_LIB(pam, pam_start)
 AC_CHECK_LIB(pam_misc, misc_conv)
 
-AC_OUTPUT(Makefile)
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
 

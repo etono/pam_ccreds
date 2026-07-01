@@ -1,10 +1,4 @@
-/* config.h.in.  Generated from configure.in by autoheader.  */
-/*
- * Credentials cache file
- */
-
-#define CCREDS_FILE			"/var/cache/.security.db"
-
+/* config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Credentials cache file */
 #undef CCREDS_FILE
@@ -15,17 +9,26 @@
 /* Define to 1 if you have the <db.h> header file. */
 #undef HAVE_DB_H
 
+/* Define to 1 if you have the <gcrypt.h> header file. */
+#undef HAVE_GCRYPT_H
+
+/* Define to 1 if you have the 'gcry_kdf_derive' function. */
+#undef HAVE_GCRY_KDF_DERIVE
+
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
-/* Define to 1 if you have the `pam' library (-lpam). */
+/* Define to 1 if you have the 'pam' library (-lpam). */
 #undef HAVE_LIBPAM
 
-/* Define to 1 if you have the `pam_misc' library (-lpam_misc). */
+/* Define to 1 if you have the 'pam_misc' library (-lpam_misc). */
 #undef HAVE_LIBPAM_MISC
 
-/* Define to 1 if you have the <memory.h> header file. */
-#undef HAVE_MEMORY_H
+/* Define to 1 if you have the <nettle/hmac.h> header file. */
+#undef HAVE_NETTLE_HMAC_H
+
+/* Define to 1 if you have the <nettle/pbkdf2.h> header file. */
+#undef HAVE_NETTLE_PBKDF2_H
 
 /* Define to 1 if you have the <openssl/opensslconf.h> header file. */
 #undef HAVE_OPENSSL_OPENSSLCONF_H
@@ -48,8 +51,20 @@
 /* Define to 1 if you have the <security/pam_modules.h> header file. */
 #undef HAVE_SECURITY_PAM_MODULES_H
 
+/* Define to 1 if you have SHA1 support in the crypto backend */
+#undef HAVE_SHA1
+
+/* Define to 1 if you have SHA2-256 support in the crypto backend */
+#undef HAVE_SHA256
+
+/* Define to 1 if you have SHA2-512 support in the crypto backend */
+#undef HAVE_SHA512
+
 /* Define to 1 if you have the <stdint.h> header file. */
 #undef HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdio.h> header file. */
+#undef HAVE_STDIO_H
 
 /* Define to 1 if you have the <stdlib.h> header file. */
 #undef HAVE_STDLIB_H
@@ -84,11 +99,25 @@
 /* Define to the one symbol short name of this package. */
 #undef PACKAGE_TARNAME
 
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
 
-/* Define to 1 if you have the ANSI C header files. */
+/* Define to 1 if all of the C89 standard headers exist (not just the ones
+   required in a freestanding environment). This macro is provided for
+   backward compatibility; new code need not use it. */
 #undef STDC_HEADERS
+
+/* Define to 1 if you want to use libgcrypt */
+#undef USE_LIBGCRYPT
+
+/* Define to 1 if you want to use nettle */
+#undef USE_NETTLE
+
+/* Define to 1 if you want to use openssl */
+#undef USE_OPENSSL
 
 /* Version number of package */
 #undef VERSION
