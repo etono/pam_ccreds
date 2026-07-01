@@ -891,7 +891,7 @@ int pam_cc_run_helper_binary(pam_handle_t *pamh, const char *helper,
 		close(fds[0]);			/* close here to avoid possible SIGPIPE above */
 		close(fds[1]);
 		(void) waitpid(child, &retval, 0); /* wait for helper to complete */
-		retval = !failed && (retval == 0) ? PAM_SUCCESS : PAM_AUTH_ERR;
+		retval = !failed && (WIFEXITED(retval) && WEXITSTATUS(retval) == 0) ? PAM_SUCCESS : PAM_AUTH_ERR;
 	} else {
 		syslog(LOG_WARNING, "pam_ccreds: fork failed");
 		retval = PAM_AUTH_ERR;
