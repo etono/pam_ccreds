@@ -1,9 +1,9 @@
-AC_INIT(cc_lib.c)
-AC_CANONICAL_SYSTEM
+AC_INIT([pam_ccreds],[10])
+AC_CANONICAL_TARGET
 AC_PREFIX_DEFAULT()
 
-AM_INIT_AUTOMAKE(pam_ccreds, 10)
-AM_CONFIG_HEADER(config.h)
+AM_INIT_AUTOMAKE
+AC_CONFIG_HEADERS([config.h])
 AM_MAINTAINER_MODE
 
 AC_PROG_GREP
@@ -38,7 +38,7 @@ AC_ARG_ENABLE([test], [ AS_HELP_STRING([--enable-test],[build a program which ca
   *) AC_MSG_ERROR([bad value ${enableval} for --enable-test]) ;;
 esac], [build_test=true])
 
-if test "$ac_cv_prog_gcc" = "yes"; then CFLAGS="$CFLAGS -Wall -fPIC"; fi
+if test "$ac_cv_c_compiler_gnu" = "yes"; then CFLAGS="$CFLAGS -Wall -fPIC"; fi
 
 case "$target_os" in
 freebsd*) CPPFLAGS="$CPPFLAGS -DPIC -D_REENTRANT" ;;
@@ -141,5 +141,6 @@ fi
 AC_CHECK_LIB(pam, pam_start)
 AC_CHECK_LIB(pam_misc, misc_conv)
 
-AC_OUTPUT(Makefile)
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
 
