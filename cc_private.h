@@ -36,7 +36,7 @@ int pam_cc_db_put(void *db, const char *key, size_t keylength,
 
 /* Read from underlying datastore */
 int pam_cc_db_get(void *db, const char *key, size_t keylength,
-		  char *data, size_t *length);
+		  char **data, size_t *length);
 
 /* Delete from underlying datastore */
 int pam_cc_db_delete(void *db, const char *key, size_t keylength);
@@ -60,6 +60,7 @@ int pam_cc_db_seq(void *_db, void **cookie,
 
 typedef int (*pam_cc_key_derivation_function_t)(pam_cc_handle_t *,
 						pam_cc_type_t,
+						uint,
 						const char *,
 						size_t,
 						char **,

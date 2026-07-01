@@ -20,94 +20,214 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
+#if defined(USE_OPENSSL)
 #include <openssl/sha.h>
-#else
+#include <openssl/evp.h>
+#elif defined(USE_LIBGCRYPT)
 #include <gcrypt.h>
+#elif defined(USE_NETTLE)
+#include <nettle/pbkdf2.h>
+#include <nettle/hmac.h>
 #endif
 
 #include "cc_private.h"
 
-static int _pam_cc_derive_key_ssha1(pam_cc_handle_t *pamcch,
-				    pam_cc_type_t type,
-				    const char *credentials,
-				    size_t length,
-				    char **derived_key_p,
-				    size_t *derived_key_length_p)
+#if defined(USE_LIBGCRYPT)
+/* If libgcrypt isn't initalized try to do it here.
+   Calls to the library will drop priviledges if it isn't initialized with
+   GCRYCTL_DISABLE_SECMEM. */
+static void _pam_cc_initialize_libgcrypt_if_needed()
 {
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
-	SHA_CTX sha_ctx;
-#else
-	if (!gcry_control (GCRYCTL_ANY_INITIALIZATION_P)) {
-		if (!gcry_check_version (NULL)) {
-			syslog (LOG_ERR,
-				"pam_ccreds: failed to initialize libgcrypt");
-			return PAM_SERVICE_ERR;
+	if (!gcry_control (GCRYCTL_INITIALIZATION_FINISHED_P)) {
+		syslog(LOG_INFO, "pam_ccreds: initializing libgcrypt");
+		if (!gcry_check_version(GCRYPT_VERSION)) {
+			syslog(LOG_ERR, "pam_ccreds: incorrect libgcrypt version: expected '%s'",
+				GCRYPT_VERSION);
+			return;
+		}     
+		gcry_control(GCRYCTL_DISABLE_SECMEM, 0);
+		gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
+	}
+}
+#endif
+
+static char * _pam_cc_get_salt(pam_cc_handle_t *pamcch, pam_cc_type_t type, size_t * salt_length_p)
+{
+	size_t user_offset = (pamcch->service ? strlen(pamcch->service) : 0) + 4;
+	char * salt;
+
+	*salt_length_p = user_offset + strlen(pamcch->user);
+	salt = (char *)malloc(*salt_length_p);
+	
+	if (salt != NULL) {
+		salt[0] = (type >> 24) & 0xFF;
+		salt[1] = (type >> 16) & 0xFF;
+		salt[2] = (type >> 8)  & 0xFF;
+		salt[3] = (type >> 0)  & 0xFF;
+		
+		if (pamcch->service != NULL) {
+			memcpy(&salt[4], pamcch->service, strlen(pamcch->service));
 		}
-
-		gcry_control (GCRYCTL_DISABLE_SECMEM, 0);
-		gcry_control (GCRYCTL_INITIALIZATION_FINISHED, 0);
+		memcpy(&salt[user_offset], pamcch->user, strlen(pamcch->user));
 	}
-
-	gcry_md_hd_t handle;
-#endif
-	unsigned char T[4];
-
-	T[0] = (type >> 24) & 0xFF;
-	T[1] = (type >> 16) & 0xFF;
-	T[2] = (type >> 8)  & 0xFF;
-	T[3] = (type >> 0)  & 0xFF;
-
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
-	SHA1_Init(&sha_ctx);
-	*derived_key_length_p = SHA_DIGEST_LENGTH;
-	*derived_key_p = malloc(SHA_DIGEST_LENGTH);
-#else
-	gcry_md_open(&handle, GCRY_MD_SHA1, 0);
-	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA1);
-	*derived_key_p = (char *)malloc(*derived_key_length_p);
-#endif
-	if (*derived_key_p == NULL) {
-		return PAM_BUF_ERR;
-	}
-
-	/*
-	 * Salt with key type, service and user names
-	 */
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
-	SHA1_Update(&sha_ctx, T, sizeof(T));
-#else
-	gcry_md_write(handle, T, sizeof(T));
-#endif
-
-	if (pamcch->service != NULL) {
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
-		SHA1_Update(&sha_ctx, pamcch->service, strlen(pamcch->service));
-#else
-		gcry_md_write(handle, pamcch->service, strlen(pamcch->service));
-#endif
-	}
-
-#ifdef HAVE_OPENSSL_OPENSSLCONF_H
-	SHA1_Update(&sha_ctx, pamcch->user, strlen(pamcch->user));
-	SHA1_Update(&sha_ctx, credentials, length);
-	SHA1_Final((unsigned char *)*derived_key_p, &sha_ctx);
-#else
-	gcry_md_write(handle, pamcch->user, strlen(pamcch->user));
-	gcry_md_write(handle, credentials, length);
-	memcpy(*derived_key_p, gcry_md_read(handle, 0), *derived_key_length_p);
-#endif
-	return PAM_SUCCESS;
+	return salt;
 }
 
-#if 0
-static int _pam_cc_derive_key_md4(pam_cc_handle_t *pamcch,
-				  pam_cc_type_t type,
-				  const char *credentials,
-				  size_t length,
-				  char **derived_key_p,
-				  size_t *derived_key_length_p)
+#if HAVE_SHA1
+static int _pam_cc_derive_key_pbkdf2_sha1(pam_cc_handle_t *pamcch,
+					  pam_cc_type_t type,
+					  uint iterations,
+					  const char *credentials,
+					  size_t length,
+					  char **derived_key_p,
+					  size_t *derived_key_length_p)
 {
+	int rv = PAM_SUCCESS;
+	size_t salt_length;
+	char * salt = _pam_cc_get_salt(pamcch, type, &salt_length);
+
+	if (salt == NULL) {
+		return PAM_BUF_ERR;
+	}	
+
+#if defined(USE_OPENSSL)
+	*derived_key_length_p = SHA_DIGEST_LENGTH;
+	*derived_key_p = malloc(SHA_DIGEST_LENGTH);
+
+	if (!PKCS5_PBKDF2_HMAC_SHA1(credentials, length, 
+				    (unsigned char *)salt, salt_length, iterations, 
+				    *derived_key_length_p, 
+				    (unsigned char *)*derived_key_p)) {
+	     rv = PAM_SYSTEM_ERR;
+	}
+#elif defined(USE_LIBGCRYPT)
+	_pam_cc_initialize_libgcrypt_if_needed();
+	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA1);
+	*derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	if (gcry_kdf_derive(credentials, length, GCRY_KDF_PBKDF2, GCRY_MD_SHA1, 
+			    salt, salt_length, iterations, 
+			    *derived_key_length_p, *derived_key_p)) {
+		rv = PAM_SYSTEM_ERR;
+	}
+#elif defined(USE_NETTLE)
+        *derived_key_length_p = SHA1_DIGEST_SIZE;
+        *derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	nettle_pbkdf2_hmac_sha1(length, (uint8_t*)credentials, iterations,
+				salt_length, (uint8_t*)salt, 
+				*derived_key_length_p, (uint8_t*)*derived_key_p);
+#endif
+	free(salt);
+
+	return rv;
+}
+#endif
+
+#if HAVE_SHA256
+static int _pam_cc_derive_key_pbkdf2_sha256(pam_cc_handle_t *pamcch,
+					    pam_cc_type_t type,
+					    uint iterations,
+					    const char *credentials,
+					    size_t length,
+					    char **derived_key_p,
+					    size_t *derived_key_length_p)
+{
+	int rv = PAM_SUCCESS;
+	size_t salt_length;
+	char * salt = _pam_cc_get_salt(pamcch, type, &salt_length);
+
+	if (salt == NULL) {
+		return PAM_BUF_ERR;
+	}	
+
+#if defined(USE_OPENSSL)
+	*derived_key_length_p = SHA256_DIGEST_LENGTH;
+	*derived_key_p = malloc(SHA256_DIGEST_LENGTH);
+
+	if (!PKCS5_PBKDF2_HMAC(credentials, length, 
+			       (unsigned char *)salt, salt_length, 
+			       iterations, EVP_sha256(),
+			       *derived_key_length_p, 
+			       (unsigned char *)*derived_key_p)) {
+	      rv = PAM_SYSTEM_ERR;
+	}
+#elif defined(USE_LIBGCRYPT)
+	_pam_cc_initialize_libgcrypt_if_needed();
+	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA256);
+	*derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	if (gcry_kdf_derive(credentials, length, GCRY_KDF_PBKDF2, GCRY_MD_SHA256, 
+			    salt, salt_length, iterations, 
+			    *derived_key_length_p, *derived_key_p)) {
+		rv = PAM_SYSTEM_ERR;
+	}
+#elif defined(USE_NETTLE)
+        *derived_key_length_p = SHA256_DIGEST_SIZE;
+        *derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	nettle_pbkdf2_hmac_sha256(length, (uint8_t*)credentials, iterations,
+				  salt_length, (uint8_t*)salt, 
+				  *derived_key_length_p, (uint8_t*)*derived_key_p);
+#endif
+
+	free(salt);
+
+	return rv;
+}
+#endif
+
+#if HAVE_SHA512
+static int _pam_cc_derive_key_pbkdf2_sha512(pam_cc_handle_t *pamcch,
+					    pam_cc_type_t type,
+					    uint iterations,
+					    const char *credentials,
+					    size_t length,
+					    char **derived_key_p,
+					    size_t *derived_key_length_p)
+{	
+	int rv = PAM_SUCCESS;
+	size_t salt_length;
+	char * salt = _pam_cc_get_salt(pamcch, type, &salt_length);
+
+	if (salt == NULL) {
+		return PAM_BUF_ERR;
+	}	
+
+#if defined(USE_OPENSSL)
+	*derived_key_length_p = SHA512_DIGEST_LENGTH;
+	*derived_key_p = malloc(SHA512_DIGEST_LENGTH);
+
+	if (!PKCS5_PBKDF2_HMAC(credentials, length, 
+			       (unsigned char *)salt, salt_length, 
+			       iterations, EVP_sha512(),
+			       *derived_key_length_p, 
+			       (unsigned char *)*derived_key_p)) {
+	      rv = PAM_SYSTEM_ERR;
+	}
+#elif defined(USE_LIBGCRYPT)
+	_pam_cc_initialize_libgcrypt_if_needed();
+	*derived_key_length_p = gcry_md_get_algo_dlen(GCRY_MD_SHA512);
+	*derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	if (gcry_kdf_derive(credentials, length, GCRY_KDF_PBKDF2, GCRY_MD_SHA512, 
+			    salt, salt_length, iterations, 
+			    *derived_key_length_p, *derived_key_p)) {
+		rv = PAM_SYSTEM_ERR;
+	}
+#elif defined(USE_NETTLE)
+        *derived_key_length_p = SHA512_DIGEST_SIZE;
+        *derived_key_p = (char *)malloc(*derived_key_length_p);
+
+	struct hmac_sha512_ctx ctx;
+	nettle_hmac_sha512_set_key(&ctx, length, (uint8_t*)credentials);
+	PBKDF2(&ctx, nettle_hmac_sha512_update, nettle_hmac_sha512_digest,
+	       SHA512_DIGEST_SIZE, iterations, salt_length, (uint8_t*)salt,
+	       *derived_key_length_p, (uint8_t*)*derived_key_p);
+#endif
+	free(salt);
+
+	return rv;
 }
 #endif
 
@@ -116,7 +236,15 @@ static struct {
 	const char *name;
 	pam_cc_key_derivation_function_t function;
 } _pam_cc_key_derivation_functions[] = {
-	{ PAM_CC_TYPE_SSHA1, "Salted SHA1", _pam_cc_derive_key_ssha1 },
+#if HAVE_SHA1
+	{ PAM_CC_TYPE_PBKDF2_SHA1, "PBKDF2 SHA1", _pam_cc_derive_key_pbkdf2_sha1 },
+#endif
+#if HAVE_SHA256
+	{ PAM_CC_TYPE_PBKDF2_SHA256, "PBKDF2 SHA256", _pam_cc_derive_key_pbkdf2_sha256 },
+#endif
+#if HAVE_SHA512
+	{ PAM_CC_TYPE_PBKDF2_SHA512, "PBKDF2 SHA512", _pam_cc_derive_key_pbkdf2_sha512 },
+#endif
 	{ PAM_CC_TYPE_NONE, NULL, NULL }
 };
 
@@ -252,7 +380,6 @@ int pam_cc_start_ext(pam_handle_t *pamh,
 }
 
 static int _pam_cc_encode_key(pam_cc_handle_t *pamcch,
-			      pam_cc_type_t type,
 			      char **key_p,
 			      size_t *keylength_p)
 {
@@ -260,12 +387,7 @@ static int _pam_cc_encode_key(pam_cc_handle_t *pamcch,
 	char *key;
 	size_t service_len;
 	size_t user_len; 
-	size_t type_buf_len;
-	char type_buf[32];
 	char *p;
-
-	snprintf(type_buf, sizeof(type_buf), "%u", type);
-	type_buf_len = strlen(type_buf);
 
 	if (pamcch->service != NULL) {
 		service_len = strlen(pamcch->service);
@@ -275,19 +397,14 @@ static int _pam_cc_encode_key(pam_cc_handle_t *pamcch,
 
 	user_len = strlen(pamcch->user);
 
-	/* type\0user\0[service\0] */
-
-	keylength = type_buf_len + 1 + user_len + 1 + service_len + 1;
+	/* user\0[service\0] */
+	keylength = user_len + 1 + service_len + 1;
 	key = malloc(keylength);
 	if (key == NULL) {
 		return PAM_BUF_ERR;
 	}
 
 	p = key;
-
-	memcpy(p, type_buf, type_buf_len);
-	p += type_buf_len;
-	*p++ = '\0';
 
 	memcpy(p, pamcch->user, user_len);
 	p += user_len;
@@ -305,20 +422,75 @@ static int _pam_cc_encode_key(pam_cc_handle_t *pamcch,
 	return PAM_SUCCESS;
 }
 
+int _pam_cc_encode_data(pam_cc_type_t type,
+			uint iterations,
+			const char *hash,
+			size_t hashlength,
+			char ** data_p,
+			size_t * datalength_p)
+{
+	char * data = NULL;  
+	*datalength_p = hashlength + 8;
+	*data_p = (char *)malloc(*datalength_p);
+	data = *data_p;
+
+	if (data == NULL) {
+		return PAM_BUF_ERR;
+	}
+	
+	data[0] = (type >> 24) & 0xFF;
+	data[1] = (type >> 16) & 0xFF;
+	data[2] = (type >> 8)  & 0xFF;
+	data[3] = (type >> 0)  & 0xFF;
+	data[4] = (iterations >> 24) & 0xFF;
+	data[5] = (iterations >> 16) & 0xFF;
+	data[6] = (iterations >> 8)  & 0xFF;
+	data[7] = (iterations >> 0)  & 0xFF;
+
+	memcpy(&data[8], hash, hashlength);
+	return PAM_SUCCESS;
+}
+
+int _pam_cc_decode_data(const char *data,
+			size_t datalength,
+			pam_cc_type_t* type_p,
+			uint* iterations_p,
+			const char ** hash_p,
+			size_t * hashlength_p)
+{
+	if (datalength < 8) {
+		return PAM_BUF_ERR;
+	}
+
+	unsigned char * ub = (unsigned char *)data;
+	
+	*type_p = (ub[0] << 24) | (ub[1] << 16) | (ub[2] << 8) | ub[3];
+	*iterations_p = (ub[4] << 24) | (ub[5] << 16) | (ub[6] << 8) | ub[7];
+
+	*hash_p = &data[8];
+	*hashlength_p = datalength - 8;
+
+	return PAM_SUCCESS;
+}
+
+
 /* Store credentials */
 int pam_cc_store_credentials(pam_cc_handle_t *pamcch,
 			     pam_cc_type_t type,
+			     uint iterations,
 			     const char *credentials,
 			     size_t length)
 {
 	char *key;
 	size_t keylength;
+	char *hash;
+	size_t hashlength;
 	char *data;
 	size_t datalength;
 	int rc;
 	pam_cc_key_derivation_function_t key_derivation_fn;
 
-	rc = _pam_cc_encode_key(pamcch, type, &key, &keylength);
+	rc = _pam_cc_encode_key(pamcch, &key, &keylength);
 	if (rc != PAM_SUCCESS) {
 		return rc;
 	}
@@ -329,9 +501,16 @@ int pam_cc_store_credentials(pam_cc_handle_t *pamcch,
 		return rc;
 	}
 
-	rc = (*key_derivation_fn)(pamcch, type, credentials, length, &data, &datalength);
+	rc = (*key_derivation_fn)(pamcch, type, iterations, credentials, length, &hash, &hashlength);
 	if (rc != PAM_SUCCESS) {
 		free(key);
+		return rc;
+	}
+
+	rc = _pam_cc_encode_data(type, iterations, hash, hashlength, &data, &datalength);
+	if (rc != PAM_SUCCESS) {
+		free(key);
+		free(hash);
 		return rc;
 	}
 
@@ -343,6 +522,9 @@ int pam_cc_store_credentials(pam_cc_handle_t *pamcch,
 
 	free(key);
 
+	memset(hash, 0, hashlength);
+	free(hash);
+
 	memset(data, 0, datalength);
 	free(data);
 
@@ -351,21 +533,34 @@ int pam_cc_store_credentials(pam_cc_handle_t *pamcch,
 
 /* Delete credentials */
 int pam_cc_delete_credentials(pam_cc_handle_t *pamcch,
-			      pam_cc_type_t type,
 			      const char *credentials,
 			      size_t length)
 {
 	int rc;
 	char *key;
 	size_t keylength;
-	char *data = NULL;
-	char *data_stored = NULL;
-	size_t datalength, datalength_stored;
+	pam_cc_type_t type;
+	uint iterations;
+	char *hash = NULL;
+	const char *storedhash = NULL;
+	char *stored = NULL;
+	size_t hashlength, storedhashlength, storedlength;
 	pam_cc_key_derivation_function_t key_derivation_fn;
 
-	rc = _pam_cc_encode_key(pamcch, type, &key, &keylength);
+	rc = _pam_cc_encode_key(pamcch, &key, &keylength);
 	if (rc != PAM_SUCCESS) {
 		return rc;
+	}
+
+	rc = pam_cc_db_get(pamcch->db, key, keylength, &stored, &storedlength);
+
+	if (rc != PAM_SUCCESS || stored == NULL) {
+		goto out;
+	}
+
+	rc = _pam_cc_decode_data(stored, storedlength, &type, &iterations, &storedhash, &storedhashlength);
+	if (rc != PAM_SUCCESS) {
+		goto out;
 	}
 
 	rc = _pam_cc_find_key_derivation_function(type, &key_derivation_fn);
@@ -373,27 +568,17 @@ int pam_cc_delete_credentials(pam_cc_handle_t *pamcch,
 		goto out;
 	}
 
-	rc = (*key_derivation_fn)(pamcch, type, credentials, length, &data, &datalength);
+	rc = (*key_derivation_fn)(pamcch, type, iterations, credentials, length, &hash, &hashlength);
 	if (rc != PAM_SUCCESS) {
 		goto out;
 	}
 
-	datalength_stored = datalength;
-	data_stored = malloc(datalength_stored);
-	if (data_stored == NULL) {
-		rc = PAM_BUF_ERR;
-		goto out;
-	}
-
-	rc = pam_cc_db_get(pamcch->db, key, keylength,
-			   data_stored, &datalength_stored);
-
-	if (rc != PAM_SUCCESS || (datalength_stored != datalength && credentials)) {
+	if (storedhashlength != hashlength && credentials) {
 		rc = PAM_IGNORE;
 		goto out;
 	}
 
-	if (memcmp(data, data_stored, datalength) == 0 || !credentials) {
+	if (!credentials || memcmp(hash, storedhash, hashlength) == 0) {
 		/* We need to delete them */
 		rc = pam_cc_db_delete(pamcch->db, key, keylength);
 		if (rc != PAM_SUCCESS && rc != PAM_AUTHINFO_UNAVAIL /* not found */) {
@@ -406,35 +591,50 @@ int pam_cc_delete_credentials(pam_cc_handle_t *pamcch,
 out:
 	free(key);
 
-	if (data != NULL) {
-		memset(data, 0, datalength);
-		free(data);
+	if (hash != NULL) {
+		memset(hash, 0, hashlength);
+		free(hash);
 	}
 
-	if (data_stored != NULL) {
-		memset(data_stored, 0, datalength_stored);
-		free(data_stored);
+	if (stored != NULL) {
+		memset(stored, 0, storedlength);
+		free(stored);
 	}
 
 	return rc;
 }
 
 int pam_cc_validate_credentials(pam_cc_handle_t *pamcch,
-				pam_cc_type_t type,
 				const char *credentials,
 				size_t length)
 {
 	int rc;
 	char *key = NULL;
 	size_t keylength;
-	char *data = NULL;
-	char *data_stored = NULL;
-	size_t datalength, datalength_stored;
+	char *hash = NULL;
+	const char *storedhash = NULL;
+	char *stored = NULL;
+	pam_cc_type_t type;
+	uint iterations;
+	size_t hashlength, storedhashlength, storedlength;
 	pam_cc_key_derivation_function_t key_derivation_fn;
 
-	rc = _pam_cc_encode_key(pamcch, type, &key, &keylength);
+	rc = _pam_cc_encode_key(pamcch, &key, &keylength);
 	if (rc != PAM_SUCCESS) {
 		return rc;
+	}
+
+	rc = pam_cc_db_get(pamcch->db, key, keylength, &stored, &storedlength);
+
+	if (rc != PAM_SUCCESS || stored == NULL) {
+		rc = PAM_USER_UNKNOWN;
+		goto out;
+	}
+
+	rc = _pam_cc_decode_data(stored, storedlength, &type, &iterations, &storedhash, &storedhashlength);
+	if (rc != PAM_SUCCESS) {
+		rc = PAM_USER_UNKNOWN;
+		goto out;
 	}
 
 	rc = _pam_cc_find_key_derivation_function(type, &key_derivation_fn);
@@ -442,29 +642,14 @@ int pam_cc_validate_credentials(pam_cc_handle_t *pamcch,
 		goto out;
 	}
 
-	rc = (*key_derivation_fn)(pamcch, type, credentials, length, &data, &datalength);
+	rc = (*key_derivation_fn)(pamcch, type, iterations, credentials, length, &hash, &hashlength);
 	if (rc != PAM_SUCCESS) {
-		goto out;
-	}
-
-	datalength_stored = datalength;
-	data_stored = malloc(datalength_stored);
-	if (data_stored == NULL) {
-		rc = PAM_BUF_ERR;
-		goto out;
-	}
-
-	rc = pam_cc_db_get(pamcch->db, key, keylength,
-			   data_stored, &datalength_stored);
-
-	if (rc != PAM_SUCCESS || datalength_stored != datalength) {
-		rc = PAM_USER_UNKNOWN;
 		goto out;
 	}
 
 	rc = PAM_AUTH_ERR;
 
-	if (memcmp(data, data_stored, datalength) == 0) {
+	if (hashlength == storedhashlength && memcmp(hash, storedhash, hashlength) == 0) {
 		rc = PAM_SUCCESS;
 	}
 
@@ -473,14 +658,14 @@ out:
 		free(key);
 	}
 
-	if (data != NULL) {
-		memset(data, 0, datalength);
-		free(data);
+	if (hash != NULL) {
+		memset(hash, 0, hashlength);
+		free(hash);
 	}
 
-	if (data_stored != NULL) {
-		memset(data_stored, 0, datalength_stored);
-		free(data_stored);
+	if (stored != NULL) {
+		memset(stored, 0, storedlength);
+		free(stored);
 	}
 
 	return rc;
@@ -574,17 +759,15 @@ static const char *_pam_cc_next_token(const char *key, size_t keylength,
 static int _pam_cc_print_entry(FILE *fp, const char *key, size_t keylength,
 			       const char *data, size_t length)
 {
-	/* type\0user\0[service\0] */
+	/* user\0[service\0] */
 	pam_cc_type_t T;
+	uint iterations;
 	const char *p = key;
-	const char *type, *user, *service;
+	const char *user, *service;
 	char sz_key_type_buf[32];
 	const char *sz_key_type;
-
-	type = _pam_cc_next_token(key, keylength, &p);
-	if (type == NULL)
-		return PAM_BUF_ERR;
-	T = atol(type);
+	const char *hash;
+	size_t hashlength;
 
 	user = _pam_cc_next_token(key, keylength, &p);
 	if (user == NULL)
@@ -594,6 +777,9 @@ static int _pam_cc_print_entry(FILE *fp, const char *key, size_t keylength,
 	if (service == NULL)
 		service = "any";
 
+	if (_pam_cc_decode_data(data, length, &T, &iterations, &hash, &hashlength) != PAM_SUCCESS)
+		return PAM_BUF_ERR;	  
+
 	sz_key_type = _pam_cc_find_key_name(T);
 	if (sz_key_type == NULL) {
 		snprintf(sz_key_type_buf, sizeof(sz_key_type_buf),
@@ -601,11 +787,11 @@ static int _pam_cc_print_entry(FILE *fp, const char *key, size_t keylength,
 		sz_key_type = sz_key_type_buf;
 	}
 
-	fprintf(fp, "%-16s %-16s %-8s", 
-		sz_key_type, user, service);
+	fprintf(fp, "%-16s %-12d %-16s %-8s ", 
+		sz_key_type, iterations, user, service);
 
-	while (length--) {
-		fprintf(fp, "%02x", *data++ & 0xFF);
+	while (hashlength--) {
+		fprintf(fp, "%02x", *hash++ & 0xFF);
 	}
 	fprintf(fp, "\n");
 
@@ -620,9 +806,9 @@ int pam_cc_dump(pam_cc_handle_t *pamcch, FILE *fp)
 	size_t keylength, datalength;
 	void *cookie = NULL;
 
-	fprintf(fp, "%-16s %-16s %-8s %-20s\n", 
-		"Credential Type", "User", "Service", "Cached Credentials");
-	fprintf(fp, "----------------------------------------------------------------------------------\n");
+	fprintf(fp, "%-16s %-12s %-16s %-8s %-20s\n", 
+		"Credential Type", "Iterations", "User", "Service", "Cached Credentials");
+	fprintf(fp, "-----------------------------------------------------------------------------------------------\n");
 
 	rc = PAM_INCOMPLETE;
 

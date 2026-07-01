@@ -38,9 +38,16 @@ typedef struct pam_cc_handle pam_cc_handle_t;
 
 typedef enum {
 	PAM_CC_TYPE_NONE = 0,
-	PAM_CC_TYPE_SSHA1 = 1,
-	PAM_CC_TYPE_MD4 = 2,
-	PAM_CC_TYPE_DEFAULT = PAM_CC_TYPE_SSHA1
+	PAM_CC_TYPE_PBKDF2_SHA1 = 1,
+	PAM_CC_TYPE_PBKDF2_SHA256 = 2,
+	PAM_CC_TYPE_PBKDF2_SHA512 = 3,
+#if HAVE_SHA512
+	PAM_CC_TYPE_DEFAULT = PAM_CC_TYPE_PBKDF2_SHA512
+#elif HAVE_SHA256
+	PAM_CC_TYPE_DEFAULT = PAM_CC_TYPE_PBKDF2_SHA512
+#elif HAVE_SHA1
+	PAM_CC_TYPE_DEFAULT = PAM_CC_TYPE_PBKDF2_SHA1
+#endif
 } pam_cc_type_t;
 
 #define CC_FLAGS_READ_ONLY	0x01
@@ -62,18 +69,17 @@ int pam_cc_start_ext(pam_handle_t *pamh,
 /* Store credentials */
 int pam_cc_store_credentials(pam_cc_handle_t *pamcch,
 			     pam_cc_type_t type,
+			     uint iterations,
 			     const char *credentials,
 			     size_t length);
 
 /* Delete credentials - if credentials supplied only on match */
 int pam_cc_delete_credentials(pam_cc_handle_t *pamcch,
-			      pam_cc_type_t type,
 			      const char *credentials,
 			      size_t length);
 
 /* Validate credentials */
 int pam_cc_validate_credentials(pam_cc_handle_t *pamcch,
-				pam_cc_type_t type,
 				const char *credentials,
 				size_t length);
 
