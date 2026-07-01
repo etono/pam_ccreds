@@ -31,7 +31,7 @@ AC_ARG_WITH(crypto-backend,
   *) AC_MSG_ERROR(bad value ${withval} for --with-crypto-backend) ;;
 esac],[crypto_backend=openssl])
 
-AC_ARG_ENABLE([test], [ AS_HELP_STRING([--enable-test],[build a program which can be used to test the module's functionality @<:@default=yes@:>@])],
+AC_ARG_ENABLE([test], [AS_HELP_STRING([--enable-test],[build a program which can be used to test the module's functionality @<:@default=yes@:>@])],
 [case "${enableval}" in
   yes) build_test=true ;;
   no)  build_test=false ;;

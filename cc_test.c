@@ -23,27 +23,27 @@ static int usage(void)
 {
 	fprintf(stderr, "Usage: cc_test [--validate|--store|--update] [options]\n\n");
 	fprintf(stderr, "Actions:\n");
-	fprintf(stderr, "  --update		    update user credentials\n");	
-	fprintf(stderr, "  --store		    store user password in the case\n");	
-	fprintf(stderr, "  --validate		    validate against cached credentials\n\n");		
-	fprintf(stderr, "General options:\n");	
-	fprintf(stderr, "  -c, --credsfile filename specify the file where the credentails are cached\n");	
-	fprintf(stderr, "  -w, --password password  specify the user password\n");	
-	fprintf(stderr, "  -s, --service name	    specify the name of the service\n");	
-	fprintf(stderr, "  -u, --user name	    specify the name of the user\n\n");	
+	fprintf(stderr, "  --update                 update user credentials\n");
+	fprintf(stderr, "  --store                  store user password in the case\n");
+	fprintf(stderr, "  --validate               validate against cached credentials\n\n");
+	fprintf(stderr, "General options:\n");
+	fprintf(stderr, "  -c, --credsfile filename specify the file where the credentails are cached\n");
+	fprintf(stderr, "  -w, --password password  specify the user password\n");
+	fprintf(stderr, "  -s, --service name       specify the name of the service\n");
+	fprintf(stderr, "  -u, --user name          specify the name of the user\n\n");
 	fprintf(stderr, "Store options:\n");
-	fprintf(stderr, "  -h, --hash hash	    specify one of the following hash functions\n"
-			"			      \"sha1\", \"sha256\" or \"sha512\"\n");
-	fprintf(stderr, "  -r, --rounds rounds	    specify the number of rounds\n");
+	fprintf(stderr, "  -h, --hash hash          specify one of the following hash functions\n"
+	                "                             \"sha1\", \"sha256\" or \"sha512\"\n");
+	fprintf(stderr, "  -r, --rounds rounds      specify the number of rounds\n");
 
 	return PAM_SYSTEM_ERR;
 }
 
-typedef enum { 
-	ACTION_VALIDATE, 
-	ACTION_STORE, 
-	ACTION_UPDATE, 
-	ACTION_NONE 
+typedef enum {
+	ACTION_VALIDATE,
+	ACTION_STORE,
+	ACTION_UPDATE,
+	ACTION_NONE
 } pam_cc_action_t;
 
 int main(int argc, char *argv[])
@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 		{0, 0, 0, 0}
 	};
 
-	while(1) {	
+	while(1) {
 		int c, index;
 		c = getopt_long(argc, argv, "r:h:w:u:s:c:", options, &index);
 
@@ -129,13 +129,13 @@ int main(int argc, char *argv[])
 	if (user == NULL) {
 		fprintf(stderr, "No user specified.\n\n");
 		usage();
-		return 1;	  
+		return 1;
 	}
 
 	if (password == NULL && (action == ACTION_VALIDATE || action == ACTION_STORE)) {
 		fprintf(stderr, "Password required when storing or validating credentials.\n\n");
 		usage();
-		return 1;	  
+		return 1;
 	}
 
 	if (hash != NULL) {
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
 		} else {
 			fprintf(stderr, "Invalid hash type.\n\n");
 			usage();
-			return 1;	  
+			return 1;
 		}
 	}
 
@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 		if (iterations == 0) {
 			fprintf(stderr, "Invalid number of rounds.\n\n");
 			usage();
-			return 1;	  
+			return 1;
 		}
 	}
 
@@ -196,4 +196,3 @@ int main(int argc, char *argv[])
 	exit(rc);
 	return rc;
 }
-
