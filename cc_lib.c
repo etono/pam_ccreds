@@ -880,17 +880,18 @@ int pam_cc_run_helper_binary(pam_handle_t *pamh, const char *helper,
 		syslog(LOG_WARNING, "pam_ccreds: helper binary is not available");
 		exit(PAM_AUTHINFO_UNAVAIL);
 	} else if (child > 0) {
-		if (passwd != NULL) {		/* send the password to the child */
-			write(fds[1], passwd, strlen(passwd) + 1);
-			passwd = NULL;
-		} else {
-			write(fds[1], "", 1);	/* blank password */
+		int failed = 0;
+		const char * pw = passwd != NULL ? passwd : "";
+		int len = strlen(pw) + 1;
+		if (write(fds[1], pw, len) != len) {
+			failed = 1;
 		}
+		pw = passwd = NULL;
 
 		close(fds[0]);			/* close here to avoid possible SIGPIPE above */
 		close(fds[1]);
 		(void) waitpid(child, &retval, 0); /* wait for helper to complete */
-		retval = (retval == 0) ? PAM_SUCCESS : PAM_AUTH_ERR;
+		retval = !failed && (retval == 0) ? PAM_SUCCESS : PAM_AUTH_ERR;
 	} else {
 		syslog(LOG_WARNING, "pam_ccreds: fork failed");
 		retval = PAM_AUTH_ERR;
