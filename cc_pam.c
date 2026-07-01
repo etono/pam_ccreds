@@ -365,7 +365,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,
 
 	if (rounds != NULL) {
 		char * error = NULL;
-		iterations = strtoul(rounds, &error, 0);
+		iterations = strtoul(rounds, &error, 10);
 		
 		if (error == rounds || rounds == 0) {
 			syslog(LOG_ERR, "pam_ccreds: invalid rounds value \"%s\"", rounds);
